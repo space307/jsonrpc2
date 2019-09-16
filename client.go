@@ -3,10 +3,8 @@ package jsonrpc2
 //go:generate easyjson
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"math/rand"
 	"net/http"
 )
@@ -92,12 +90,12 @@ func (c *client) Call(ctx context.Context, methodName string, params interface{}
 		return err
 	}
 
-	rawResp, err := c.httpClient.Post(ctx, c.url, bytes.NewBuffer(encodedReq))
+	resp, err := c.httpClient.Post(ctx, c.url, encodedReq)
 	if err != nil {
 		return err
 	}
 
-	return decodeResponse(rawResp.Body, result)
+	return decodeResponse(resp, result)
 }
 
 func encodeRequest(method string, args interface{}) ([]byte, error) {
@@ -109,11 +107,14 @@ func encodeRequest(method string, args interface{}) ([]byte, error) {
 	})
 }
 
-func decodeResponse(r io.Reader, reply interface{}) error {
+func decodeResponse(r []byte, reply interface{}) error {
 	var resp Response
-	if err := json.NewDecoder(r).Decode(&resp); err != nil {
+
+	err := json.Unmarshal(r, &resp)
+	if err != nil {
 		return err
 	}
+
 	if resp.Error != nil {
 		jsonRpcError := &ResponseError{}
 		if err := json.Unmarshal(*resp.Error, jsonRpcError); err != nil {
