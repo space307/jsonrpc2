@@ -4,6 +4,7 @@ package jsonrpc2
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"math/rand"
@@ -26,10 +27,12 @@ type ResponseError struct {
 	Data    interface{} `json:"data"`
 }
 
+// Error returns an error message of ResponseError.
 func (e *ResponseError) Error() string {
 	return e.Message
 }
 
+// Request represents a jsonrpc2 request.
 //easyjson:json
 type Request struct {
 	Version string      `json:"jsonrpc"`
@@ -38,6 +41,7 @@ type Request struct {
 	Id      uint64      `json:"id"`
 }
 
+// Request represents a jsonrpc2 response.
 //easyjson:json
 type Response struct {
 	Version string           `json:"jsonrpc"`
@@ -46,28 +50,32 @@ type Response struct {
 }
 
 type (
+	// Client represents jsonrpc caller interface.
+	// It have only one method call which satisfies simple case of jsonrpc2 usage.
 	Client interface {
-		Call(methodName string, req interface{}, res interface{}) error
+		Call(ctx context.Context, methodName string, params interface{}, result interface{}) error
 	}
 
 	client struct {
 		url        string
-		httpClient *http.Client
+		httpClient HTTPClient
 	}
 
 	clientOption func(c *client)
 )
 
-func WithHttpClient(httpClient *http.Client) clientOption {
+//  WithHttpClient is an option which sets http client implementation for jsonrpc2 client.
+func WithHttpClient(httpClient HTTPClient) clientOption {
 	return func(c *client) {
 		c.httpClient = httpClient
 	}
 }
 
+// NewClient returns jsonrpc2 client.
 func NewClient(rpcEndpointURL string, options ...clientOption) Client {
 	c := &client{
 		url:        rpcEndpointURL,
-		httpClient: http.DefaultClient,
+		httpClient: NewHttpClient(http.DefaultClient),
 	}
 
 	for _, opt := range options {
@@ -77,18 +85,19 @@ func NewClient(rpcEndpointURL string, options ...clientOption) Client {
 	return c
 }
 
-func (c *client) Call(methodName string, req interface{}, resp interface{}) error {
-	encodedReq, err := encodeRequest(methodName, req)
+// Call makes and does jsonrpc2 request.
+func (c *client) Call(ctx context.Context, methodName string, params interface{}, result interface{}) error {
+	encodedReq, err := encodeRequest(methodName, params)
 	if err != nil {
 		return err
 	}
 
-	rawResp, err := c.httpClient.Post(c.url, contentTypeApplicationJSON, bytes.NewBuffer(encodedReq))
+	rawResp, err := c.httpClient.Post(ctx, c.url, bytes.NewBuffer(encodedReq))
 	if err != nil {
 		return err
 	}
 
-	return decodeResponse(rawResp.Body, resp)
+	return decodeResponse(rawResp.Body, result)
 }
 
 func encodeRequest(method string, args interface{}) ([]byte, error) {
