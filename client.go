@@ -5,6 +5,7 @@ package jsonrpc2
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math/rand"
 	"net/http"
 )
@@ -15,6 +16,11 @@ const (
 
 	protocolVersionStr         = "2.0"
 	contentTypeApplicationJSON = "application/json"
+)
+
+var (
+	ErrCouldNotEncodeRequest = errors.New("could not encode request")
+	ErrCouldNotDecodeResponse = errors.New("could not decode response")
 )
 
 // ResponseError is a struct which represents a typical jsonrpc2 error according to specification.
@@ -33,30 +39,33 @@ func (e *ResponseError) Error() string {
 // Request represents a jsonrpc2 request.
 //easyjson:json
 type Request struct {
+	Id      uint64      `json:"id"`
 	Version string      `json:"jsonrpc"`
 	Method  string      `json:"method"`
 	Params  interface{} `json:"params"`
-	Id      uint64      `json:"id"`
 }
 
 // Request represents a jsonrpc2 response.
 //easyjson:json
 type Response struct {
+	Id string `json:"id"`
 	Version string           `json:"jsonrpc"`
 	Result  *json.RawMessage `json:"result"`
-	Error   *json.RawMessage `json:"error"`
+	Error   *ResponseError `json:"error"`
 }
 
 type (
 	// Client represents jsonrpc caller interface.
 	// It have only one method call which satisfies simple case of jsonrpc2 usage.
 	Client interface {
-		Call(ctx context.Context, methodName string, params interface{}, result interface{}) error
+		Call(ctx context.Context, methodName string, params interface{}) error
 	}
 
 	client struct {
 		url        string
 		httpClient HTTPClient
+
+		roundTripper RoundTripper
 	}
 
 	clientOption func(c *client)
@@ -85,50 +94,23 @@ func NewClient(rpcEndpointURL string, options ...clientOption) Client {
 
 // Call makes and does jsonrpc2 request.
 func (c *client) Call(ctx context.Context, methodName string, params interface{}, result interface{}) error {
-	encodedReq, err := encodeRequest(methodName, params)
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Post(ctx, c.url, encodedReq)
-	if err != nil {
-		return err
-	}
-
-	return decodeResponse(resp, result)
-}
-
-func encodeRequest(method string, args interface{}) ([]byte, error) {
-	return json.Marshal(&Request{
+	response, err := c.roundTripper.RoundTrip(ctx, &Request{
 		Version: protocolVersionStr,
-		Method:  method,
-		Params:  args,
+		Method:  methodName,
+		Params:  params,
 		Id:      uint64(rand.Int63()),
 	})
-}
-
-func decodeResponse(r []byte, reply interface{}) error {
-	var resp Response
-
-	err := json.Unmarshal(r, &resp)
 	if err != nil {
 		return err
 	}
 
-	if resp.Error != nil {
-		jsonRpcError := &ResponseError{}
-		if err := json.Unmarshal(*resp.Error, jsonRpcError); err != nil {
-			return &ResponseError{
-				Code:    ErrCodeParseError,
-				Message: string(*resp.Error),
-			}
-		}
-		return jsonRpcError
+	if response.Error != nil {
+		return response.Error
 	}
 
-	if resp.Result == nil {
+	if response.Result == nil {
 		return nil
 	}
 
-	return json.Unmarshal(*resp.Result, reply)
+	return json.Unmarshal(*response.Result, result)
 }
