@@ -5,8 +5,9 @@ package jsonrpc2
 import (
 	"context"
 	"encoding/json"
-	"math/rand"
 	"net/http"
+
+	uuid "github.com/satori/go.uuid"
 )
 
 const (
@@ -33,10 +34,10 @@ func (e *ResponseError) Error() string {
 // Request represents a jsonrpc2 request.
 //easyjson:json
 type Request struct {
-	Version string      `json:"jsonrpc"`
-	Method  string      `json:"method"`
-	Params  interface{} `json:"params"`
-	Id      uint64      `json:"id"`
+	Version string           `json:"jsonrpc"`
+	Method  string           `json:"method"`
+	Params  interface{}      `json:"params"`
+	Id      *json.RawMessage `json:"id"`
 }
 
 // Request represents a jsonrpc2 response.
@@ -45,6 +46,7 @@ type Response struct {
 	Version string           `json:"jsonrpc"`
 	Result  *json.RawMessage `json:"result"`
 	Error   *json.RawMessage `json:"error"`
+	Id      *json.RawMessage `json:"id"`
 }
 
 type (
@@ -85,7 +87,15 @@ func NewClient(rpcEndpointURL string, options ...clientOption) Client {
 
 // Call makes and does jsonrpc2 request.
 func (c *client) Call(ctx context.Context, methodName string, params interface{}, result interface{}) error {
-	encodedReq, err := encodeRequest(methodName, params)
+	requestID, _ := RequestIDFromContext(ctx)
+
+	if requestID == nil {
+		// We do not use json.Marshal because we know the json representation of a string.
+		requestIDVal := json.RawMessage("\"" + uuid.NewV4().String() + "\"")
+		requestID = &requestIDVal
+	}
+
+	encodedReq, err := encodeRequest(requestID, methodName, params)
 	if err != nil {
 		return err
 	}
@@ -98,12 +108,12 @@ func (c *client) Call(ctx context.Context, methodName string, params interface{}
 	return decodeResponse(resp, result)
 }
 
-func encodeRequest(method string, args interface{}) ([]byte, error) {
+func encodeRequest(id *json.RawMessage, method string, args interface{}) ([]byte, error) {
 	return json.Marshal(&Request{
 		Version: protocolVersionStr,
 		Method:  method,
 		Params:  args,
-		Id:      uint64(rand.Int63()),
+		Id:      id,
 	})
 }
 
