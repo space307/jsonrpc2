@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	uuid "github.com/satori/go.uuid"
+	uuid "github.com/gofrs/uuid"
 )
 
 const (
@@ -90,8 +90,13 @@ func (c *client) Call(ctx context.Context, methodName string, params interface{}
 	requestID, _ := RequestIDFromContext(ctx)
 
 	if requestID == nil {
+		reqUUID, err := uuid.NewV4()
+		if err != nil {
+			return err
+		}
+
 		// We do not use json.Marshal because we know the json representation of a string.
-		requestIDVal := json.RawMessage("\"" + uuid.NewV4().String() + "\"")
+		requestIDVal := json.RawMessage("\"" + reqUUID.String() + "\"")
 		requestID = &requestIDVal
 	}
 
