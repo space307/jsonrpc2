@@ -2,6 +2,7 @@ package jsonrpc2
 
 import (
 	"context"
+
 	"github.com/semrush/zenrpc"
 )
 
@@ -18,6 +19,5 @@ func (TestService) Divide(ctx context.Context, a int, b int) (result float32, er
 	if b == 0 {
 		return 0, zenrpc.NewStringError(-32500, "Could not divide to zero")
 	}
-	return float32(a)/float32(b), nil
+	return float32(a) / float32(b), nil
 }
-
